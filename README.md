@@ -1,36 +1,18 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Hiring dashboard
 
-## Getting Started
+Internal tool: upload CVs → auto-score against the Kargo PM + SPM rubric → interview briefs for the top N → personalised invite/rejection drafts → founder sends each one via Resend.
 
-First, run the development server:
+## Pipeline
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. **Upload** (`/api/upload`, no AI). Text is pulled from the PDF/DOCX. Name, email and phone are guessed by regex and shown for the founder to confirm. They go into `candidate_pii`. The CV is redacted (`[CANDIDATE]`, `[EMAIL]`, `[PHONE]`, `[PROFILE URL]`) and only that redacted text is stored in `candidates.cv_text`.
+2. **Score** (`lib/ai.ts#scoreCv`). A single Claude call scores all 8 criteria (PM + SPM, 1–4, one-line reason each). Weighted scores are computed in code, not by the model.
+3. **Email draft**. Applied-role score ≥ invite line → invite, otherwise a warm rejection. Drafts use `{{first_name}}`, and the real name is filled in only when the page is shown or the email is sent.
+4. **Briefs** (`lib/pipeline.ts#reconcile`). A three-sentence brief for the top N per applied role. Changing the threshold or N in Settings updates briefs and re-drafts any unsent email whose invite/reject decision flipped.
+5. **Send** (`/api/send`). One click per candidate, with a confirm. It's claimed atomically so it can't double-send. Nothing is sent automatically.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Supabase: run `supabase/schema.sql` in the SQL editor. This creates the tables, locks them down (RLS on, no public access) and seeds the rubric.
+2. Resend: verify a sending domain and set `RESEND_FROM` to an address on it.
+3. Copy `.env.example` → `.env.local` and fill it in. `npm run dev`.
+4. Deploy: import into Vercel and add the same env vars.
