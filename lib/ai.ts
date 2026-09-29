@@ -4,15 +4,46 @@ import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 import type { Criterion, Role, RoleCode, Settings } from "./db";
 
-let _client: GoogleGenAI | null = null;
-const gemini = () => (_client ??= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }));
 const MODEL = process.env.GEMINI_MODEL || "gemini-3.1-pro-preview";
+
+// GEMINI_API_KEYS is a comma-separated list, tried in order. A key that hits a quota,
+// rate limit or auth error is benched for a while and the next one is used, so the
+// last key in the list is only touched when every key before it is unavailable.
+const KEYS = (process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "")
+  .split(",").map((k) => k.trim()).filter(Boolean);
+const clients = new Map<string, GoogleGenAI>();
+const benchedUntil = new Map<string, number>();
+
+function isKeyProblem(e: unknown) {
+  const status = (e as { status?: number }).status;
+  const msg = String((e as Error).message ?? "");
+  return status === 429 || status === 401 || status === 403 ||
+    /RESOURCE_EXHAUSTED|quota|rate limit|PERMISSION_DENIED|API key/i.test(msg);
+}
+
+async function generate(params: Parameters<GoogleGenAI["models"]["generateContent"]>[0]) {
+  if (!KEYS.length) throw new Error("No Gemini API key configured (GEMINI_API_KEYS).");
+  let lastErr: unknown;
+  for (const key of KEYS) {
+    if ((benchedUntil.get(key) ?? 0) > Date.now()) continue;
+    if (!clients.has(key)) clients.set(key, new GoogleGenAI({ apiKey: key }));
+    try {
+      return await clients.get(key)!.models.generateContent(params);
+    } catch (e) {
+      lastErr = e;
+      if (!isKeyProblem(e)) throw e;
+      const quota = /quota|RESOURCE_EXHAUSTED/i.test(String((e as Error).message));
+      benchedUntil.set(key, Date.now() + (quota ? 10 * 60_000 : 60_000));
+    }
+  }
+  throw lastErr ?? new Error("All Gemini keys are temporarily rate-limited; try again in a few minutes.");
+}
 
 async function ask<T extends z.ZodType>(opts: { system: string; prompt: string; schema: T }): Promise<z.infer<T>> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const res = await gemini().models.generateContent({
+      const res = await generate({
         model: MODEL,
         contents: opts.prompt,
         config: {
