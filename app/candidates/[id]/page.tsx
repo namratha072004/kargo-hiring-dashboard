@@ -52,7 +52,7 @@ export default async function CandidatePage({ params }: { params: Promise<{ id: 
             Draft email <span className={`pill ${c.email_kind ?? ""}`}>{c.email_kind ?? "none"}</span>
           </h2>
           {c.email_body ? (
-            <EmailEditor id={id} to={pii.email} firstName={first} subject={c.email_subject ?? ""} body={body}
+            <EmailEditor id={id} to={pii.email} firstName={first} testTo={process.env.RESEND_TEST_TO || undefined} subject={c.email_subject ?? ""} body={body}
               sentAt={c.email_sent_at ? new Date(c.email_sent_at).toISOString() : null} lastError={c.email_error} />
           ) : <p className="muted">No draft yet.</p>}
         </section>

@@ -154,6 +154,7 @@ export function EmailEditor(props: {
   id: string;
   to: string | null;
   firstName: string;
+  testTo?: string;
   subject: string;
   body: string;
   sentAt: string | null;
@@ -182,13 +183,13 @@ export function EmailEditor(props: {
 
   async function send() {
     if (!props.to) return;
-    if (!confirm(`Send this email to ${props.to}?`)) return;
+    if (!confirm(props.testTo ? `TEST MODE: this goes to ${props.testTo}, not ${props.to}. Continue?` : `Send this email to ${props.to}?`)) return;
     setBusy(true);
     try {
       if (dirty) await save();
       setState("Sending…");
-      await post("/api/send", { id: props.id });
-      setState("Sent.");
+      const r = await post("/api/send", { id: props.id });
+      setState(r.test ? `Test mode: sent to ${r.to} instead of the candidate. Not marked as sent.` : "Sent.");
       router.refresh();
     } catch (e) {
       setState(`Failed: ${(e as Error).message}`);
@@ -202,7 +203,7 @@ export function EmailEditor(props: {
       <label>Body<textarea rows={14} value={body} onChange={(e) => setBody(e.target.value)} /></label>
       <div className="row">
         <button onClick={send} disabled={busy || !props.to}>
-          {props.to ? `Send to ${props.to}` : "No email address on file"}
+          {!props.to ? "No email address on file" : props.testTo ? `Send test to ${props.testTo}` : `Send to ${props.to}`}
         </button>
         {dirty && (
           <button className="secondary" disabled={busy}

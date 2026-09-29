@@ -18,17 +18,23 @@ export async function POST(req: Request) {
   if (!claimed.length) return NextResponse.json({ error: "Already sent." }, { status: 409 });
 
   const text = (c.email_override ?? c.email_body).replaceAll("{{first_name}}", firstName(c.full_name));
+  // Test mode (no verified domain yet): deliver to the founder instead, and don't mark as sent.
+  const testTo = process.env.RESEND_TEST_TO?.trim();
   const resend = new Resend(process.env.RESEND_API_KEY);
   const { data, error } = await resend.emails.send({
-    from: process.env.RESEND_FROM!,
-    to: c.email,
+    from: process.env.RESEND_FROM || "Kargo Hiring <onboarding@resend.dev>",
+    to: testTo || c.email,
     replyTo: process.env.RESEND_REPLY_TO || undefined,
-    subject: c.email_subject,
+    subject: testTo ? `[TEST → ${c.email}] ${c.email_subject}` : c.email_subject,
     text,
   });
   if (error) {
     await sql`update candidates set email_sent_at = null, email_error = ${error.message} where id = ${id}`;
     return NextResponse.json({ error: error.message }, { status: 502 });
+  }
+  if (testTo) {
+    await sql`update candidates set email_sent_at = null where id = ${id}`;
+    return NextResponse.json({ ok: true, test: true, to: testTo });
   }
   await sql`update candidates set resend_id = ${data?.id ?? null} where id = ${id}`;
   return NextResponse.json({ ok: true });
