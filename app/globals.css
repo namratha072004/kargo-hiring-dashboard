@@ -34,3 +34,4 @@ tr.below td { color:var(--muted); }
 pre { white-space:pre-wrap; font:inherit; margin:0; }
 .line td { border-bottom:2px dashed var(--accent); }
 .scroll { overflow-x:auto; }
+.clamp { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }

@@ -6,7 +6,7 @@ import type { Criterion, Role, RoleCode, Settings } from "./db";
 
 let _client: GoogleGenAI | null = null;
 const gemini = () => (_client ??= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }));
-const MODEL = process.env.GEMINI_MODEL || "gemini-2.5-pro";
+const MODEL = process.env.GEMINI_MODEL || "gemini-3.1-pro-preview";
 
 async function ask<T extends z.ZodType>(opts: { system: string; prompt: string; schema: T }): Promise<z.infer<T>> {
   let lastErr: unknown;
@@ -129,12 +129,18 @@ export async function draftEmail(opts: {
     schema: z.object({ subject: z.string(), body: z.string() }),
     system:
       `You write short, human emails from ${settings.sender_name} at ${settings.company_name}. ` +
-      `Plain text, 90-150 words, no markdown. Start the body with "Hi {{first_name}}," exactly — that placeholder ` +
+      `Plain text, 90-150 words, no markdown. Layout: greeting line, then 2-3 short paragraphs, then the sign-off — separate each with a blank line (a double newline in the JSON string). Start the body with "Hi {{first_name}}," exactly — that placeholder ` +
       `is filled in later with the candidate's real name, so never invent or guess a name and never write ` +
       `[CANDIDATE]. Sign off as ${settings.sender_name}. Never invent facts that are not in the CV or job description.`,
     prompt: `${task}\n\n<job_description>\n${role.jd}\n</job_description>\n\n${cvBlock(opts.cv)}`,
   });
   let body = out.body.trim().replace(/\[CANDIDATE\]/g, "{{first_name}}");
   if (!body.includes("{{first_name}}")) body = `Hi {{first_name}},\n\n${body}`;
+  // Safety net if the model still returns one run-on paragraph.
+  if (!body.includes("\n")) {
+    body = body
+      .replace(/^(Hi \{\{first_name\}\},)\s*/, "$1\n\n")
+      .replace(/\s+((?:Best|Warm|Kind|Thanks|Regards|Cheers|Sincerely)[^.!?]{0,20},)\s*/, "\n\n$1\n");
+  }
   return { subject: out.subject.trim().replace(/\[CANDIDATE\]/g, "").trim(), body };
 }

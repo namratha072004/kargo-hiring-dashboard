@@ -13,7 +13,7 @@ Internal tool: upload CVs → auto-score against the Kargo PM + SPM rubric → i
 ## Setup
 
 1. Database (Neon): put `DATABASE_URL` in `.env.local`, then `npm run db:setup`. This creates the tables, seeds the rubric from `db/schema.sql` and loads the JDs from `db/jds/`. It's safe to re-run.
-2. Gemini: set `GEMINI_API_KEY` (and optionally `GEMINI_MODEL`, default `gemini-2.5-pro`).
+2. Gemini: set `GEMINI_API_KEY` (and optionally `GEMINI_MODEL`, default `gemini-3.1-pro-preview`).
 3. Resend: verify a sending domain and set `RESEND_FROM` to an address on it.
 4. Set `APP_PASSWORD`, then `npm run dev`.
 5. Deploy: import into Vercel and add the same env vars.

@@ -79,7 +79,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
                   <td className="num"><strong>{score(r, role)?.toFixed(2)}</strong></td>
                   <td className="num">{score(r, other)?.toFixed(2)}</td>
                   <td><span className={`pill ${r.email_kind ?? ""}`}>{r.email_kind ?? "—"}</span></td>
-                  <td style={{ maxWidth: 420 }}>{r.brief ? <span className="muted">{r.brief}</span> : ""}</td>
+                  <td style={{ maxWidth: 420 }}>{r.brief ? <span className="muted clamp">{r.brief}</span> : ""}</td>
                   <td>{r.email_sent_at ? <span className="ok">✓</span> : ""}</td>
                 </tr>
               ))}
