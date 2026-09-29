@@ -1,11 +1,7 @@
-import { createClient } from "@supabase/supabase-js";
+import { neon } from "@neondatabase/serverless";
 
-// Server-only client. The service-role key bypasses RLS; it must never reach the browser.
-export const db = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } },
-);
+// Server-only. DATABASE_URL must never be exposed to the browser.
+export const sql = neon(process.env.DATABASE_URL!);
 
 export type RoleCode = "PM" | "SPM";
 export const ROLES: RoleCode[] = ["PM", "SPM"];
@@ -31,18 +27,19 @@ export type Settings = {
   invite_next_step: string;
 };
 
+export type Role = { code: RoleCode; title: string; jd: string };
+
 export async function getRubric(): Promise<Criterion[]> {
-  const { data, error } = await db
-    .from("rubric_criteria")
-    .select("*")
-    .order("role_code")
-    .order("position");
-  if (error) throw error;
-  return data.map((c) => ({ ...c, weight: Number(c.weight) }));
+  const rows = await sql`select * from rubric_criteria order by role_code, position`;
+  return rows.map((c) => ({ ...c, weight: Number(c.weight) }) as Criterion);
 }
 
 export async function getSettings(): Promise<Settings> {
-  const { data, error } = await db.from("settings").select("*").eq("id", 1).single();
-  if (error) throw error;
-  return { ...data, invite_threshold: Number(data.invite_threshold) };
+  const [s] = await sql`select * from settings where id = 1`;
+  return { ...s, invite_threshold: Number(s.invite_threshold) } as Settings;
+}
+
+export async function getRoles(): Promise<Record<RoleCode, Role>> {
+  const rows = (await sql`select code, title, jd from roles`) as Role[];
+  return Object.fromEntries(rows.map((r) => [r.code, r])) as Record<RoleCode, Role>;
 }

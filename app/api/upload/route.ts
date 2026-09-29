@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { fileToText } from "@/lib/parse";
 import { extractPii, redact, type Pii } from "@/lib/pii";
-import { db, ROLES, type RoleCode } from "@/lib/db";
+import { sql, ROLES, type RoleCode } from "@/lib/db";
 
 // Two actions, both deterministic (no AI):
 //  "extract": read files, return a best guess at name/email/phone for the founder to confirm.
@@ -36,20 +36,17 @@ export async function POST(req: Request) {
     if (!pii.full_name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
 
     const text = await fileToText(file);
-    const { data, error } = await db
-      .from("candidates")
-      .insert({ applied_role: role, file_name: file.name, cv_text: redact(text, pii) })
-      .select("id")
-      .single();
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    const { error: e2 } = await db.from("candidate_pii").insert({
-      candidate_id: data.id, full_name: pii.full_name, email: pii.email || null, phone: pii.phone || null,
-    });
-    if (e2) {
-      await db.from("candidates").delete().eq("id", data.id);
-      return NextResponse.json({ error: e2.message }, { status: 500 });
+    const id = crypto.randomUUID();
+    try {
+      await sql.transaction([
+        sql`insert into candidates (id, applied_role, file_name, cv_text) values (${id}, ${role}, ${file.name}, ${redact(text, pii)})`,
+        sql`insert into candidate_pii (candidate_id, full_name, email, phone)
+            values (${id}, ${pii.full_name}, ${pii.email || null}, ${pii.phone || null})`,
+      ]);
+    } catch (e) {
+      return NextResponse.json({ error: (e as Error).message }, { status: 500 });
     }
-    return NextResponse.json({ id: data.id });
+    return NextResponse.json({ id });
   }
 
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });

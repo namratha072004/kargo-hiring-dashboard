@@ -1,12 +1,11 @@
--- Hiring dashboard schema + Kargo rubric seed.
--- Every table has RLS on and no policies: only the server (service-role key) can read or write.
-
-create extension if not exists pgcrypto;
+-- Hiring dashboard schema + Kargo rubric seed (Postgres / Neon).
+-- Only the server connects (DATABASE_URL); nothing is exposed to the browser.
 
 -- ---------------------------------------------------------------- roles & rubric
 create table roles (
   code  text primary key,          -- 'PM' | 'SPM'
-  title text not null
+  title text not null,
+  jd    text not null default ''   -- job description, used as context for briefs and emails (not scoring)
 );
 
 create table rubric_criteria (
@@ -72,19 +71,9 @@ create table settings (
   invite_threshold numeric(3,2) not null default 3.00,  -- applied-role score >= this gets an invite
   top_n            int not null default 5,              -- briefs for the top N per role
   company_name     text not null default 'Kargo',
-  sender_name      text not null default 'The Kargo team',
+  sender_name      text not null default 'Arjun Mehta',
   invite_next_step text not null default 'Reply to this email with two or three times that suit you next week and we will send a calendar invite.'
 );
-
-alter table roles            enable row level security;
-alter table rubric_criteria  enable row level security;
-alter table candidates       enable row level security;
-alter table candidate_pii    enable row level security;
-alter table criterion_scores enable row level security;
-alter table role_scores      enable row level security;
-alter table settings         enable row level security;
-
-revoke all on all tables in schema public from anon, authenticated;
 
 -- ---------------------------------------------------------------- seed
 insert into settings (id) values (1);

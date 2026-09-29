@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { db, getRubric, ROLES, type RoleCode } from "@/lib/db";
+import { sql, getRubric, ROLES, type RoleCode } from "@/lib/db";
 import { firstName } from "@/lib/pii";
 import { ActionButton, EmailEditor } from "../../components";
 
@@ -8,15 +8,16 @@ export const dynamic = "force-dynamic";
 
 export default async function CandidatePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [{ data: c }, criteria, { data: scores }, { data: roleScores }] = await Promise.all([
-    db.from("candidates").select("*, candidate_pii(full_name, email, phone)").eq("id", id).maybeSingle(),
+  if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
+  const [[c], criteria, scores, roleScores] = await Promise.all([
+    sql`select c.*, p.full_name, p.email, p.phone
+        from candidates c join candidate_pii p on p.candidate_id = c.id where c.id = ${id}`,
     getRubric(),
-    db.from("criterion_scores").select("criterion_id, score, reason").eq("candidate_id", id),
-    db.from("role_scores").select("role_code, weighted_score").eq("candidate_id", id),
+    sql`select criterion_id, score, reason from criterion_scores where candidate_id = ${id}`,
+    sql`select role_code, weighted_score from role_scores where candidate_id = ${id}`,
   ]);
   if (!c) notFound();
-  const pii = (Array.isArray(c.candidate_pii) ? c.candidate_pii[0] : c.candidate_pii) as
-    { full_name: string; email: string | null; phone: string | null };
+  const pii = c as unknown as { full_name: string; email: string | null; phone: string | null };
   const first = firstName(pii.full_name);
   const body = (c.email_override ?? c.email_body ?? "").replaceAll("{{first_name}}", first);
   const rs = (role: RoleCode) => Number(roleScores?.find((r) => r.role_code === role)?.weighted_score ?? 0);
@@ -52,7 +53,7 @@ export default async function CandidatePage({ params }: { params: Promise<{ id: 
           </h2>
           {c.email_body ? (
             <EmailEditor id={id} to={pii.email} firstName={first} subject={c.email_subject ?? ""} body={body}
-              sentAt={c.email_sent_at} lastError={c.email_error} />
+              sentAt={c.email_sent_at ? new Date(c.email_sent_at).toISOString() : null} lastError={c.email_error} />
           ) : <p className="muted">No draft yet.</p>}
         </section>
 

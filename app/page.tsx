@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { db, getSettings, type RoleCode } from "@/lib/db";
+import { sql, getSettings, type RoleCode } from "@/lib/db";
 import { ActionButton, Uploader } from "./components";
 
 export const dynamic = "force-dynamic";
@@ -13,20 +13,26 @@ type Row = {
   email_kind: string | null;
   email_sent_at: string | null;
   created_at: string;
-  candidate_pii: { full_name: string } | null;
+  full_name: string | null;
   role_scores: { role_code: RoleCode; weighted_score: number }[];
 };
 
 export default async function Dashboard({ searchParams }: { searchParams: Promise<{ role?: string }> }) {
   const role: RoleCode = (await searchParams).role === "SPM" ? "SPM" : "PM";
   const other: RoleCode = role === "PM" ? "SPM" : "PM";
-  const [settings, { data, error }] = await Promise.all([
+  const [settings, data] = await Promise.all([
     getSettings(),
-    db.from("candidates")
-      .select("id, applied_role, status, error, brief, email_kind, email_sent_at, created_at, candidate_pii(full_name), role_scores(role_code, weighted_score)")
-      .returns<Row[]>(),
+    sql`
+      select c.id, c.applied_role, c.status, c.error, c.brief, c.email_kind, c.email_sent_at, c.created_at,
+             p.full_name,
+             coalesce(json_agg(json_build_object('role_code', rs.role_code, 'weighted_score', rs.weighted_score))
+                      filter (where rs.role_code is not null), '[]') as role_scores
+      from candidates c
+      left join candidate_pii p on p.candidate_id = c.id
+      left join role_scores rs on rs.candidate_id = c.id
+      group by c.id, p.full_name
+      order by c.created_at`.then((r) => r as Row[]),
   ]);
-  if (error) throw error;
 
   const score = (r: Row, rc: RoleCode) => {
     const s = r.role_scores.find((x) => x.role_code === rc);
@@ -69,7 +75,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
               {scored.map((r, i) => (
                 <tr key={r.id} className={[i >= lineIndex && lineIndex !== -1 ? "below" : "", i === lineIndex - 1 ? "line" : ""].join(" ")}>
                   <td>{i + 1}</td>
-                  <td><Link href={`/candidates/${r.id}`}>{r.candidate_pii?.full_name ?? "(no name)"}</Link></td>
+                  <td><Link href={`/candidates/${r.id}`}>{r.full_name ?? "(no name)"}</Link></td>
                   <td className="num"><strong>{score(r, role)?.toFixed(2)}</strong></td>
                   <td className="num">{score(r, other)?.toFixed(2)}</td>
                   <td><span className={`pill ${r.email_kind ?? ""}`}>{r.email_kind ?? "—"}</span></td>
@@ -88,7 +94,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           <table><tbody>
             {crossFits.map((r) => (
               <tr key={r.id}>
-                <td><Link href={`/candidates/${r.id}`}>{r.candidate_pii?.full_name}</Link></td>
+                <td><Link href={`/candidates/${r.id}`}>{r.full_name}</Link></td>
                 <td className="num">{role} {score(r, role)?.toFixed(2)}</td>
                 <td className="num muted">{other} {score(r, other)?.toFixed(2)}</td>
               </tr>
@@ -103,7 +109,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           <table><tbody>
             {unscored.map((r) => (
               <tr key={r.id}>
-                <td><Link href={`/candidates/${r.id}`}>{r.candidate_pii?.full_name}</Link> <span className="muted">({r.applied_role})</span></td>
+                <td><Link href={`/candidates/${r.id}`}>{r.full_name}</Link> <span className="muted">({r.applied_role})</span></td>
                 <td className={r.status === "error" ? "err" : "muted"}>{r.status}{r.error ? `: ${r.error}` : ""}</td>
                 <td><ActionButton label="Retry" url="/api/process" body={{ id: r.id, reconcile: true }} /></td>
               </tr>
