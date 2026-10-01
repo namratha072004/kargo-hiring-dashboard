@@ -94,9 +94,11 @@ export function SuggestChip({ c }: { c: Candidate }) {
 
 export function EmailChip({ c }: { c: Candidate }) {
   const href = `/candidates/${c.id}#email`;
-  if (c.email_sent_at) return <Link href={href} className="chip teal">📨 {c.email_kind === "invite" ? "Invite" : "Rejection"} sent</Link>;
-  if (c.decision === "pending") return <Link href={href} className="chip ghost">✉️ Draft ready</Link>;
-  return <Link href={href} className="chip violet">✉️ Ready to send →</Link>;
+  if (c.email_sent_at) {
+    const test = c.email_sent_to && c.email_sent_to !== c.email;
+    return <Link href={href} className="chip green">📨 {c.email_kind === "invite" ? "Invite" : "Rejection"} sent{test ? " (test)" : ""}</Link>;
+  }
+  return <Link href={href} className="chip violet">✉️ {c.email_kind === "invite" ? "Invite" : "Rejection"} drafted →</Link>;
 }
 
 export function InterviewChip({ c }: { c: Candidate }) {

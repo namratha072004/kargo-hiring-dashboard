@@ -9,9 +9,23 @@ export async function POST(req: Request) {
               where id = ${b.id} and email_sent_at is null`;
     return NextResponse.json({ ok: true });
   }
+  if (b.action === "unsend_test") {
+    // Only test sends (delivered to someone other than the candidate) can be reset.
+    const r = which(b.which) === "followup"
+      ? await sql`update interviews i set followup_sent_at = null, followup_sent_to = null from candidate_pii p
+                  where i.candidate_id = ${b.id} and p.candidate_id = i.candidate_id and i.followup_sent_to is distinct from p.email returning i.candidate_id`
+      : await sql`update candidates c set email_sent_at = null, email_sent_to = null from candidate_pii p
+                  where c.id = ${b.id} and p.candidate_id = c.id and c.email_sent_to is distinct from p.email returning c.id`;
+    if (!r.length) return NextResponse.json({ error: "That email went to the real candidate, so it stays sent." }, { status: 409 });
+    return NextResponse.json({ ok: true });
+  }
   if (b.action === "delete") {
     await sql`delete from candidates where id = ${b.id}`;
     return NextResponse.json({ ok: true });
   }
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });
+}
+
+function which(w: unknown) {
+  return w === "followup" ? "followup" : "initial";
 }

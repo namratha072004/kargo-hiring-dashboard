@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { getCandidates, appliedScore, type Candidate } from "@/lib/queries";
+import { getCandidates, appliedScore, firstNameOf, type Candidate } from "@/lib/queries";
 import { ROLES, type RoleCode } from "@/lib/db";
 import { scoreBg, scoreColor, scoreInk, scoreLabel } from "@/lib/score";
-import { QuickDecide } from "./components";
+import { ConfirmSendButton, QuickDecide } from "./components";
 import { ScoreRing } from "./ui";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +26,8 @@ function nowIST() {
 }
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
 
-export default async function Dashboard() {
+export default async function Dashboard({ searchParams }: { searchParams: Promise<{ sent?: string }> }) {
+  const { sent } = await searchParams;
   const { candidates, settings, criteria } = await getCandidates();
   const scored = candidates.filter((c) => c.status === "scored");
   const good = scored.filter((c) => c.recommendation === "invite");
@@ -44,6 +45,12 @@ export default async function Dashboard() {
     .sort((a, b) => +new Date(a.interview!.scheduled_at!) - +new Date(b.interview!.scheduled_at!));
   const toSchedule = invited.filter((c) => c.interview?.status === "to_schedule");
   const total = candidates.length;
+  // Next up: highest-scoring candidate whose first email hasn't gone out, best first.
+  const queue = scored
+    .filter((c) => !c.email_sent_at && c.email_body)
+    // ties: newest first, so fresh uploads surface ahead of older equals
+    .sort((a, b) => appliedScore(b) - appliedScore(a) || +new Date(b.created_at) - +new Date(a.created_at));
+  const spot = queue[0];
   const { greeting, date } = nowIST();
 
   const tiles = [
@@ -116,6 +123,24 @@ export default async function Dashboard() {
           </Link>
         ))}
       </div>
+
+      {sent && (() => {
+        const s = candidates.find((c) => c.id === sent && c.email_sent_at);
+        if (!s) return null;
+        const test = s.email_sent_to && s.email_sent_to !== s.email;
+        return (
+          <div className="banner green" style={{ alignItems: "center" }}>
+            📨 <span style={{ flex: 1 }}>
+              <b>{s.email_kind === "invite" ? "Invite" : "Rejection"} sent to {s.full_name}</b>, delivered to <b>{s.email_sent_to}</b>
+              {test && <> (test mode, instead of {s.email})</>}. Their card is now marked as sent.
+            </span>
+            {s.decision === "invite" && <Link href={`/interviews#${s.id}`} className="btn small secondary">📅 Schedule interview</Link>}
+            <Link href={`/candidates/${s.id}`} className="btn small secondary">View card</Link>
+          </div>
+        );
+      })()}
+
+      {spot && <Spotlight c={spot} next={queue.slice(1, 4)} threshold={settings.invite_threshold} testTo={process.env.RESEND_TEST_TO || undefined} />}
 
       <div className="grid-32">
         <section className="card">
@@ -285,6 +310,60 @@ function TopList({ role, list }: { role: RoleCode; list: Candidate[] }) {
           </div>
         </Link>
       ))}
+    </section>
+  );
+}
+
+function Spotlight({ c, next, threshold, testTo }: { c: Candidate; next: Candidate[]; threshold: number; testTo?: string }) {
+  const first = firstNameOf(c.full_name);
+  const body = (c.email_override ?? c.email_body ?? "").replaceAll("{{first_name}}", first);
+  const kind = (c.email_kind ?? "invite") as "invite" | "reject";
+  const decided = c.decision !== "pending";
+  const mismatch = decided && c.email_kind !== c.decision;
+  return (
+    <section className="card tint-violet" id="next-up">
+      <div className="card-head">
+        <h2>⭐ Next up: review &amp; confirm</h2>
+        <span className="sub">top-scoring candidate whose email hasn&apos;t gone out yet</span>
+        <span className="spacer" />
+        {next.length > 0 && <span className="small muted">Then: {next.map((n) => n.full_name).join(" · ")}</span>}
+      </div>
+      <div className="grid-2">
+        <div style={{ background: "var(--card)", borderRadius: 14, padding: 18 }}>
+          <div className="hstack" style={{ marginBottom: 12, gap: 14 }}>
+            <ScoreRing score={appliedScore(c)} size={64} />
+            <div style={{ flex: 1 }}>
+              <Link href={`/candidates/${c.id}`} className="cand-name">{c.full_name}</Link>
+              <div className="small muted">
+                {c.applied_role === "PM" ? "Product Manager" : "Senior PM"} · {scoreLabel(appliedScore(c))} · line {threshold.toFixed(2)}
+              </div>
+              <div className="cand-chips">
+                <span className="chip ghost">🤖 suggests {c.recommendation === "invite" ? "interview" : "pass"}</span>
+                {decided && <span className={`chip ${c.decision === "invite" ? "green" : "red"}`}>Arjun: {c.decision === "invite" ? "Interview" : "Pass"}</span>}
+              </div>
+            </div>
+          </div>
+          <h3>📝 Interview brief</h3>
+          <p className="small ink2" style={{ marginBottom: 0 }}>{c.brief ?? "No brief (only the top candidates per role get one)."}</p>
+        </div>
+        <div style={{ background: "var(--card)", borderRadius: 14, padding: 18, display: "flex", flexDirection: "column" }}>
+          <div className="hstack" style={{ marginBottom: 8 }}>
+            <h3 style={{ margin: 0 }}>✉️ Draft email</h3>
+            <span className={`chip ${kind === "invite" ? "green" : "red"}`}>{kind === "invite" ? "Interview invite" : "Rejection"}</span>
+          </div>
+          <div className="mailbox" style={{ flex: 1 }}>
+            <div className="hdr">To: <b>{c.email}</b>{testTo && <span className="muted"> · test mode: delivers to {testTo}</span>}<br />Subject: <b>{c.email_subject}</b></div>
+            <pre className="small" style={{ maxHeight: 210, overflowY: "auto" }}>{body}</pre>
+          </div>
+          <div className="row" style={{ marginBottom: 0 }}>
+            <ConfirmSendButton id={c.id} kind={kind} decisionPending={!decided} to={c.email} testTo={testTo} disabled={mismatch}
+              afterSendHref={`/?sent=${c.id}`} />
+            <Link href={`/candidates/${c.id}#email`} className="btn secondary small">✏️ Edit first</Link>
+            {!decided && <Link href={`/candidates/${c.id}`} className="small">or {kind === "invite" ? "pass" : "invite"} instead →</Link>}
+          </div>
+          {mismatch && <p className="small err" style={{ marginBottom: 0 }}>Draft is being rewritten to match your decision. Refresh in a moment.</p>}
+        </div>
+      </div>
     </section>
   );
 }

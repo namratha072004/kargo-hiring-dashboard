@@ -114,14 +114,15 @@ export default async function CandidatePage({ params }: { params: Promise<{ id: 
           )}
         </div>
         {!decided && !c.email_sent_at && (
-          <div className="banner sun">👆 <span>This draft follows the app&apos;s suggestion. <b>Pick Invite or Pass above</b> to unlock sending. If you overrule the suggestion, the email is rewritten to match.</span></div>
+          <div className="banner sun">👇 <span>This {c.email_kind === "invite" ? "invite" : "rejection"} follows the app&apos;s suggestion. <b>Confirm &amp; send</b> accepts it and sends it in one click. To overrule, pick {c.email_kind === "invite" ? "Pass" : "Invite"} above and the email is rewritten to match.</span></div>
         )}
         {c.email_body ? (
           <EmailEditor key={`${c.email_kind}-${c.email_body?.length}`} id={id} to={c.email} firstName={first}
+            kind={c.email_kind ?? "invite"} decisionPending={!decided}
             testTo={process.env.RESEND_TEST_TO || undefined} subject={c.email_subject ?? ""} body={body}
-            sentAt={c.email_sent_at} lastError={c.email_error}
-            canSend={decided && draftMatches}
-            blockedReason={!decided ? "Sending unlocks after you decide." : !draftMatches ? "The draft is being rewritten to match your decision. Refresh in a moment." : undefined} />
+            sentAt={c.email_sent_at} sentTo={c.email_sent_to} lastError={c.email_error}
+            canSend={!decided || draftMatches}
+            blockedReason={decided && !draftMatches ? "The draft is being rewritten to match your decision. Refresh in a moment." : undefined} />
         ) : <p className="ink2">No draft yet.</p>}
       </section>
 

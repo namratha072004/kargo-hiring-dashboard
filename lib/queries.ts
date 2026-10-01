@@ -22,6 +22,7 @@ export type Interview = {
   followup_subject: string | null;
   followup_body: string | null;
   followup_sent_at: string | null;
+  followup_sent_to: string | null;
   followup_error: string | null;
 };
 
@@ -38,6 +39,7 @@ export type Candidate = {
   email_body: string | null;
   email_override: string | null;
   email_sent_at: string | null;
+  email_sent_to: string | null;
   email_error: string | null;
   created_at: string;
   cv_text: string;

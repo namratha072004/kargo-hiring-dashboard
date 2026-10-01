@@ -26,32 +26,30 @@ export async function POST(req: Request) {
     subject = c.email_subject; body = c.email_override ?? c.email_body;
   }
 
-  // Test mode (no verified domain yet): deliver to the founder instead, and don't mark as sent.
+  // Test mode (no verified domain yet): deliver to the founder's inbox instead of the candidate.
   const testTo = process.env.RESEND_TEST_TO?.trim();
+  const to = testTo || c.email;
 
   // Claim the send atomically so a double click can't send twice.
-  if (!testTo) {
-    const claimed = which === "followup"
-      ? await sql`update interviews set followup_sent_at = now(), followup_error = null where candidate_id = ${id} and followup_sent_at is null returning candidate_id`
-      : await sql`update candidates set email_sent_at = now(), email_error = null where id = ${id} and email_sent_at is null returning id`;
-    if (!claimed.length) return NextResponse.json({ error: "Already sent." }, { status: 409 });
-  }
+  const claimed = which === "followup"
+    ? await sql`update interviews set followup_sent_at = now(), followup_sent_to = ${to}, followup_error = null where candidate_id = ${id} and followup_sent_at is null returning candidate_id`
+    : await sql`update candidates set email_sent_at = now(), email_sent_to = ${to}, email_error = null where id = ${id} and email_sent_at is null returning id`;
+  if (!claimed.length) return NextResponse.json({ error: "Already sent." }, { status: 409 });
 
   const text = body.replaceAll("{{first_name}}", firstName(c.full_name));
   const resend = new Resend(process.env.RESEND_API_KEY);
   const { data, error } = await resend.emails.send({
     from: process.env.RESEND_FROM || "Kargo Hiring <onboarding@resend.dev>",
-    to: testTo || c.email,
+    to,
     replyTo: process.env.RESEND_REPLY_TO || undefined,
     subject: testTo ? `[TEST → ${c.email}] ${subject}` : subject,
     text,
   });
   if (error) {
-    if (which === "followup") await sql`update interviews set followup_sent_at = null, followup_error = ${error.message} where candidate_id = ${id}`;
-    else await sql`update candidates set email_sent_at = null, email_error = ${error.message} where id = ${id}`;
+    if (which === "followup") await sql`update interviews set followup_sent_at = null, followup_sent_to = null, followup_error = ${error.message} where candidate_id = ${id}`;
+    else await sql`update candidates set email_sent_at = null, email_sent_to = null, email_error = ${error.message} where id = ${id}`;
     return NextResponse.json({ error: error.message }, { status: 502 });
   }
-  if (testTo) return NextResponse.json({ ok: true, test: true, to: testTo });
   if (which === "initial") await sql`update candidates set resend_id = ${data?.id ?? null} where id = ${id}`;
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, test: !!testTo, to, resend_id: data?.id ?? null });
 }

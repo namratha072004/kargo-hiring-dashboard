@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -69,9 +69,21 @@ export function Uploader() {
   const [over, setOver] = useState(false);
   const [msg, setMsg] = useState("");
   const [finished, setFinished] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const processRef = useRef<() => void>(() => {});
 
   const update = (i: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  // Editing a detected detail pauses the auto-start so nothing runs on a half-fixed name.
+  const edit = (i: number, patch: Partial<Row>) => { setCountdown(null); update(i, patch); };
+
+  // Auto-start: once every file has a detected name, scoring begins after a short countdown.
+  useEffect(() => {
+    if (countdown == null) return;
+    if (countdown <= 0) { setCountdown(null); processRef.current(); return; }
+    const t = setTimeout(() => setCountdown((n) => (n == null ? null : n - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [countdown]);
 
   async function onFiles(list: FileList | File[] | null) {
     const files = Array.from(list ?? []);
@@ -84,9 +96,12 @@ export function Uploader() {
     files.forEach((f) => fd.append("files", f));
     const res = await fetch("/api/upload", { method: "POST", body: fd });
     const json = await res.json();
-    setRows(json.files.map((r: Partial<Row>, i: number) => ({ full_name: "", email: "", phone: "", ...r, file: files[i] }) as Row));
+    const next = json.files.map((r: Partial<Row>, i: number) => ({ full_name: "", email: "", phone: "", ...r, file: files[i] }) as Row);
+    setRows(next);
     setMsg("");
     setBusy(false);
+    const ok = next.filter((r: Row) => !r.error);
+    if (ok.length && ok.every((r: Row) => r.full_name.trim())) setCountdown(8);
   }
 
   async function processAll() {
@@ -129,6 +144,7 @@ export function Uploader() {
 
   const ready = rows.filter((r) => !r.error && r.state !== "done");
   const missingName = ready.some((r) => !r.full_name.trim());
+  processRef.current = () => { if (!busy && ready.length && !missingName) processAll(); };
 
   return (
     <>
@@ -177,11 +193,11 @@ export function Uploader() {
                     ) : (
                       <>
                         <td><input value={r.full_name} disabled={busy || r.state === "done"} placeholder="required"
-                          onChange={(e) => update(i, { full_name: e.target.value })} /></td>
+                          onChange={(e) => edit(i, { full_name: e.target.value })} /></td>
                         <td><input value={r.email} disabled={busy || r.state === "done"}
-                          onChange={(e) => update(i, { email: e.target.value })} /></td>
+                          onChange={(e) => edit(i, { email: e.target.value })} /></td>
                         <td><input value={r.phone} disabled={busy || r.state === "done"}
-                          onChange={(e) => update(i, { phone: e.target.value })} /></td>
+                          onChange={(e) => edit(i, { phone: e.target.value })} /></td>
                         <td className="small" style={{ whiteSpace: "nowrap" }}>
                           {r.state === "done" ? <span className="ok">✅ done</span>
                             : r.state?.startsWith("failed") ? <span className="err">{r.state}</span>
@@ -195,12 +211,19 @@ export function Uploader() {
               </tbody>
             </table>
           </div>
+          {countdown != null && (
+            <div className="banner violet" style={{ marginTop: 12 }}>
+              ⏱️ <span style={{ flex: 1 }}>All names detected. <b>Scoring starts automatically in {countdown}s.</b> Check the details above; editing any field pauses this.</span>
+              <button className="secondary small" onClick={() => setCountdown(null)}>⏸ Pause to edit</button>
+            </div>
+          )}
           <div className="row">
-            <button className="big" onClick={processAll} disabled={busy || !ready.length || missingName}>
+            <button className="big" onClick={() => { setCountdown(null); processAll(); }} disabled={busy || !ready.length || missingName}>
               ✨ Score {ready.length} CV{ready.length === 1 ? "" : "s"} as {role}
             </button>
-            <button className="secondary" onClick={() => { setRows([]); setMsg(""); setFinished(false); }} disabled={busy}>Clear</button>
-            {finished && <Link className="btn green" href={`/candidates?role=${role}`}>See the ranking →</Link>}
+            <button className="secondary" onClick={() => { setRows([]); setMsg(""); setFinished(false); setCountdown(null); }} disabled={busy}>Clear</button>
+            {finished && <Link className="btn green" href="/#next-up">Review on the dashboard →</Link>}
+            {finished && <Link className="btn secondary" href={`/candidates?role=${role}`}>See the ranking</Link>}
           </div>
           {msg && <p className="small"><b>{msg}</b></p>}
         </section>
@@ -269,15 +292,100 @@ export function DecisionPanel(props: {
 
 // ---------------------------------------------------------------- email
 
+// "Sent" receipt shown once an email has gone out. Test sends can be undone so the
+// same email can later go to the real candidate.
+export function SentReceipt(props: {
+  id: string; which?: "initial" | "followup"; to: string | null; sentTo: string | null; sentAt: string;
+  subject?: string; body?: string;
+}) {
+  const router = useRouter();
+  const [err, setErr] = useState("");
+  const isTest = !!props.sentTo && props.sentTo !== props.to;
+  return (
+    <div>
+      <div className="banner green">📨 <span>
+        <b>Sent</b> {new Date(props.sentAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })} to <b>{props.sentTo ?? props.to}</b>
+        {isTest && <> · 🧪 test mode, so it went to your inbox instead of {props.to}</>}
+      </span></div>
+      {props.subject && <div className="mailbox"><div className="hdr"><b>{props.subject}</b></div><pre>{props.body}</pre></div>}
+      {isTest && (
+        <div className="row">
+          <button className="secondary small" onClick={async () => {
+            if (!confirm("Mark this test email as unsent? You'll be able to send it again.")) return;
+            try { await post("/api/candidate", { action: "unsend_test", id: props.id, which: props.which ?? "initial" }); router.refresh(); }
+            catch (e) { setErr((e as Error).message); }
+          }}>↺ Undo test send</button>
+          {err && <span className="err small">{err}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// One click: records Arjun's decision (if not made yet) and sends the email. This is the
+// "Confirm" in the review flow. Nothing is sent without this click.
+export function ConfirmSendButton(props: {
+  id: string;
+  which?: "initial" | "followup";
+  kind: "invite" | "reject" | "next_round" | "hire" | "no_hire";
+  decisionPending: boolean;   // true → this click is also Arjun's decision
+  to: string | null;
+  testTo?: string;
+  beforeSend?: () => Promise<void>;
+  disabled?: boolean;
+  big?: boolean;
+  afterSendHref?: string;     // navigate here after sending (e.g. dashboard with a "sent" banner)
+}) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+  const label = { invite: "invite", reject: "rejection", next_round: "next-round invite", hire: "offer email", no_hire: "rejection" }[props.kind];
+
+  async function go() {
+    if (!props.to) return;
+    const dest = props.testTo ? `${props.testTo} (test mode, instead of ${props.to})` : props.to;
+    if (!confirm(`Confirm and send the ${label} to ${dest}?`)) return;
+    setBusy(true); setErr("");
+    try {
+      if (props.beforeSend) await props.beforeSend();
+      if (props.decisionPending && (props.kind === "invite" || props.kind === "reject")) {
+        await post("/api/decision", { id: props.id, decision: props.kind });
+      }
+      const r = await post("/api/send", { id: props.id, which: props.which ?? "initial" });
+      setDone(r.to);
+      if (props.afterSendHref) router.push(props.afterSendHref);
+      router.refresh();
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+    setBusy(false);
+  }
+
+  if (done) return <span className="ok">✅ Sent to {done}</span>;
+  return (
+    <span className="hstack">
+      <button className={`${props.big ? "big" : ""} ${props.kind === "reject" || props.kind === "no_hire" ? "red" : "green"}`}
+        disabled={busy || !props.to || props.disabled} onClick={go}>
+        {busy ? <><span className="spin">⏳</span> Sending…</> : <>✅ Confirm &amp; send {label}</>}
+      </button>
+      {err && <span className="err small">{err}</span>}
+    </span>
+  );
+}
+
 export function EmailEditor(props: {
   id: string;
   which?: "initial" | "followup";
+  kind: "invite" | "reject" | "next_round" | "hire" | "no_hire";
+  decisionPending?: boolean;
   to: string | null;
   firstName: string;
   testTo?: string;
   subject: string;
   body: string;
   sentAt: string | null;
+  sentTo?: string | null;
   lastError: string | null;
   canSend: boolean;
   blockedReason?: string;
@@ -287,42 +395,17 @@ export function EmailEditor(props: {
   const [subject, setSubject] = useState(props.subject);
   const [body, setBody] = useState(props.body);
   const [state, setState] = useState(props.lastError ? `Last send failed: ${props.lastError}` : "");
-  const [busy, setBusy] = useState(false);
-  const [sentTest, setSentTest] = useState(false);
   const dirty = subject !== props.subject || body !== props.body;
 
   if (props.sentAt) {
-    return (
-      <div>
-        <div className="banner green">📨 <span>Sent to <b>{props.to}</b> on {new Date(props.sentAt).toLocaleString("en-IN")}</span></div>
-        <div className="mailbox"><div className="hdr"><b>{props.subject}</b></div><pre>{props.body}</pre></div>
-      </div>
-    );
+    return <SentReceipt id={props.id} which={which} to={props.to} sentTo={props.sentTo ?? null} sentAt={props.sentAt}
+      subject={props.subject} body={props.body} />;
   }
 
   async function save() {
     const tpl = body.replaceAll(props.firstName, "{{first_name}}");
     if (which === "followup") await post("/api/interview", { action: "save_followup", id: props.id, subject, body: tpl });
     else await post("/api/candidate", { action: "save_email", id: props.id, subject, body: tpl });
-  }
-
-  async function send() {
-    if (!props.to || !props.canSend) return;
-    const msg = props.testTo
-      ? `TEST MODE: this will go to ${props.testTo} (not ${props.to}). Send it?`
-      : `Send this email to ${props.to} now?`;
-    if (!confirm(msg)) return;
-    setBusy(true);
-    try {
-      if (dirty) await save();
-      setState("Sending…");
-      const r = await post("/api/send", { id: props.id, which });
-      if (r.test) { setSentTest(true); setState(""); } else setState("Sent! 🎉");
-      router.refresh();
-    } catch (e) {
-      setState(`Failed: ${(e as Error).message}`);
-    }
-    setBusy(false);
   }
 
   return (
@@ -336,18 +419,16 @@ export function EmailEditor(props: {
         <label style={{ marginBottom: 0 }}>Message<textarea rows={13} value={body} onChange={(e) => setBody(e.target.value)} /></label>
       </div>
       <div className="row">
-        <button className="big" onClick={send} disabled={busy || !props.to || !props.canSend}>
-          {busy ? <span className="spin">⏳</span> : "🚀"} {props.testTo ? "Send test email" : "Send email"}
-        </button>
+        <ConfirmSendButton id={props.id} which={which} kind={props.kind} decisionPending={!!props.decisionPending}
+          to={props.to} testTo={props.testTo} disabled={!props.canSend} big
+          beforeSend={dirty ? save : undefined} />
         {dirty && (
-          <button className="secondary" disabled={busy}
-            onClick={async () => { await save(); setState("Draft saved ✔"); router.refresh(); }}>
+          <button className="secondary" onClick={async () => { await save(); setState("Draft saved ✔"); router.refresh(); }}>
             💾 Save edits
           </button>
         )}
       </div>
       {!props.canSend && props.blockedReason && <p className="small ink2">🔒 {props.blockedReason}</p>}
-      {sentTest && <div className="banner green">✅ <span>Test email sent to <b>{props.testTo}</b>. Check that inbox (and spam). It isn&apos;t marked as sent, so you can send it again for real later.</span></div>}
       {state && <p className={state.startsWith("Failed") || state.startsWith("Last") ? "err small" : "ok small"}>{state}</p>}
     </div>
   );

@@ -117,6 +117,7 @@ function InterviewCard({ c, blobEnabled, testTo }: { c: Candidate; blobEnabled: 
               )}
               {iv.followup_body ? (
                 <EmailEditor key={`${iv.followup_kind}-${iv.followup_body.length}`} which="followup" id={c.id} to={c.email}
+                  kind={(iv.followup_kind ?? "next_round") as "next_round" | "hire" | "no_hire"} sentTo={iv.followup_sent_to}
                   firstName={first} testTo={testTo} subject={iv.followup_subject ?? ""} body={followBody}
                   sentAt={iv.followup_sent_at} lastError={iv.followup_error}
                   canSend={iv.followup_kind === iv.outcome}
