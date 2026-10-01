@@ -1,4 +1,5 @@
 import { getRubric, getSettings, ROLES } from "@/lib/db";
+import { LEVELS } from "@/lib/score";
 import { SettingsForm } from "../components";
 
 export const dynamic = "force-dynamic";
@@ -7,27 +8,28 @@ export default async function SettingsPage() {
   const [s, criteria] = await Promise.all([getSettings(), getRubric()]);
   return (
     <>
-      <h1>Settings</h1>
+      <div className="page-head"><div><h1>⚙️ Settings</h1><p>Tune where the line sits and how emails read.</p></div></div>
       <SettingsForm initial={{
         invite_threshold: s.invite_threshold, top_n: s.top_n, company_name: s.company_name,
         sender_name: s.sender_name, invite_next_step: s.invite_next_step,
       }} />
-      <section className="card">
-        <h2>Rubric in use</h2>
+      <div className="grid-2">
         {ROLES.map((role) => (
-          <div key={role}>
-            <h3>{role}</h3>
-            <table>
-              <thead><tr><th>Criterion</th><th className="num">Weight</th><th>4 — Strong looks like</th></tr></thead>
-              <tbody>
-                {criteria.filter((c) => c.role_code === role).map((c) => (
-                  <tr key={c.id}><td>{c.name}</td><td className="num">{Math.round(c.weight * 100)}%</td><td className="muted">{c.level_4}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <section className="card" key={role}>
+            <h2>📏 {role === "PM" ? "Product Manager" : "Senior PM"} rubric</h2>
+            {criteria.filter((c) => c.role_code === role).map((c) => (
+              <details key={c.id} style={{ borderBottom: "2px dashed var(--soft-line)", padding: "10px 0" }}>
+                <summary style={{ cursor: "pointer", fontWeight: 700 }}>
+                  {c.name} <span className="chip sun" style={{ marginLeft: 6 }}>{Math.round(c.weight * 100)}%</span>
+                </summary>
+                <ol className="small ink2" style={{ margin: "8px 0 0", paddingLeft: 20 }}>
+                  {[c.level_1, c.level_2, c.level_3, c.level_4].map((l, i) => <li key={i}><b>{LEVELS[i + 1]}:</b> {l}</li>)}
+                </ol>
+              </details>
+            ))}
+          </section>
         ))}
-      </section>
+      </div>
     </>
   );
 }

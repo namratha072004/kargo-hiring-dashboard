@@ -141,30 +141,15 @@ export async function writeBrief(opts: { cv: string; role: Role; scoreLines: str
 
 // ---------------------------------------------------------------- email
 
-export async function draftEmail(opts: {
-  cv: string;
-  kind: "invite" | "reject";
-  role: Role;
-  settings: Settings;
-}): Promise<{ subject: string; body: string }> {
-  const { settings, role } = opts;
-  const task =
-    opts.kind === "invite"
-      ? `Write an interview invitation for the ${role.title} role. Mention one or two specific things from ` +
-        `their CV that made us want to talk, and connect them to what the role needs. Mention the role is ` +
-        `in-office in Mumbai. Close with this next step, in your own words: "${settings.invite_next_step}"`
-      : `Write a warm, respectful rejection for the ${role.title} role. Thank them, name one specific thing ` +
-        `from their CV you genuinely noticed, say clearly and kindly that we won't be moving forward this time, ` +
-        `and wish them well. Do not give scores, rubric language, or reasons that could read as a critique.`;
-  const out = await ask({
-    schema: z.object({ subject: z.string(), body: z.string() }),
-    system:
-      `You write short, human emails from ${settings.sender_name} at ${settings.company_name}. ` +
-      `Plain text, 90-150 words, no markdown. Layout: greeting line, then 2-3 short paragraphs, then the sign-off — separate each with a blank line (a double newline in the JSON string). Start the body with "Hi {{first_name}}," exactly — that placeholder ` +
-      `is filled in later with the candidate's real name, so never invent or guess a name and never write ` +
-      `[CANDIDATE]. Sign off as ${settings.sender_name}. Never invent facts that are not in the CV or job description.`,
-    prompt: `${task}\n\n<job_description>\n${role.jd}\n</job_description>\n\n${cvBlock(opts.cv)}`,
-  });
+const emailSystem = (settings: Settings) =>
+  `You write short, human emails from ${settings.sender_name} at ${settings.company_name}. ` +
+  `Plain text, 90-150 words, no markdown. Layout: greeting line, then 2-3 short paragraphs, then the sign-off — ` +
+  `separate each with a blank line (a double newline in the JSON string). Start the body with "Hi {{first_name}}," ` +
+  `exactly — that placeholder is filled in later with the candidate's real name, so never invent or guess a name ` +
+  `and never write [CANDIDATE]. Sign off as ${settings.sender_name}. Never mention scores, rubrics or AI. ` +
+  `Never invent facts that are not in the material you are given.`;
+
+function tidyEmail(out: { subject: string; body: string }) {
   let body = out.body.trim().replace(/\[CANDIDATE\]/g, "{{first_name}}");
   if (!body.includes("{{first_name}}")) body = `Hi {{first_name}},\n\n${body}`;
   // Safety net if the model still returns one run-on paragraph.
@@ -174,4 +159,66 @@ export async function draftEmail(opts: {
       .replace(/\s+((?:Best|Warm|Kind|Thanks|Regards|Cheers|Sincerely)[^.!?]{0,20},)\s*/, "\n\n$1\n");
   }
   return { subject: out.subject.trim().replace(/\[CANDIDATE\]/g, "").trim(), body };
+}
+
+const emailSchema = z.object({ subject: z.string(), body: z.string() });
+
+// strengths: rubric evidence that scored 3-4, e.g. "Unprompted build: built X used by 45 people in 5 weeks".
+export async function draftEmail(opts: {
+  cv: string;
+  kind: "invite" | "reject";
+  role: Role;
+  settings: Settings;
+  strengths?: string[];
+}): Promise<{ subject: string; body: string }> {
+  const { settings, role } = opts;
+  const strengths = opts.strengths?.length
+    ? `\n\nWhat stood out most when we reviewed this CV (use the specifics, never the labels):\n- ${opts.strengths.join("\n- ")}`
+    : "";
+  const task =
+    opts.kind === "invite"
+      ? `Write an interview invitation for the ${role.title} role. Mention one or two specific things from ` +
+        `their CV that made us want to talk, and connect them to what this particular role needs. Mention the role ` +
+        `is in-office in Mumbai. Close with this next step, in your own words: "${settings.invite_next_step}"${strengths}`
+      : `Write a warm, respectful rejection for the ${role.title} role. Thank them, name one specific thing ` +
+        `from their CV you genuinely noticed, say clearly and kindly that we won't be moving forward this time, ` +
+        `and wish them well. Do not give reasons that could read as a critique.${strengths}`;
+  const out = await ask({
+    schema: emailSchema,
+    system: emailSystem(settings),
+    prompt: `${task}\n\n<job_description>\n${role.jd}\n</job_description>\n\n${cvBlock(opts.cv)}`,
+  });
+  return tidyEmail(out);
+}
+
+// After the interview: built from the CV plus Arjun's (redacted) interview notes.
+export async function draftFollowup(opts: {
+  cv: string;
+  outcome: "next_round" | "hire" | "no_hire";
+  role: Role;
+  settings: Settings;
+  notes: string;
+}): Promise<{ subject: string; body: string }> {
+  const { settings, role } = opts;
+  const task = {
+    next_round:
+      `Write a follow-up after their first interview for the ${role.title} role, inviting them to a next round. ` +
+      `Refer to one or two specific things discussed in the interview. Ask them to reply with times that suit them.`,
+    hire:
+      `Write a follow-up after their interview for the ${role.title} role saying we would love to move forward and ` +
+      `that ${settings.sender_name} will call in the next day or two to talk through the offer. Refer to one or two ` +
+      `specific things from the interview that convinced us. Do not state salary or terms.`,
+    no_hire:
+      `Write a warm, respectful note after their interview for the ${role.title} role saying we won't be moving ` +
+      `forward. Thank them for their time, mention one specific thing from the conversation we appreciated, and ` +
+      `wish them well. Do not list shortcomings.`,
+  }[opts.outcome];
+  const out = await ask({
+    schema: emailSchema,
+    system: emailSystem(settings),
+    prompt:
+      `${task}\n\n<interview_notes>\n${opts.notes || "(no notes)"}\n</interview_notes>\n\n` +
+      `<job_description>\n${role.jd}\n</job_description>\n\n${cvBlock(opts.cv)}`,
+  });
+  return tidyEmail(out);
 }
