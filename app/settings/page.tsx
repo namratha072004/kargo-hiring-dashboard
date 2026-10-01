@@ -18,7 +18,7 @@ export default async function SettingsPage() {
           <section className="card" key={role}>
             <h2>📏 {role === "PM" ? "Product Manager" : "Senior PM"} rubric</h2>
             {criteria.filter((c) => c.role_code === role).map((c) => (
-              <details key={c.id} style={{ borderBottom: "2px dashed var(--soft-line)", padding: "10px 0" }}>
+              <details key={c.id} style={{ borderBottom: "1px solid var(--soft-line)", padding: "10px 0" }}>
                 <summary style={{ cursor: "pointer", fontWeight: 700 }}>
                   {c.name} <span className="chip sun" style={{ marginLeft: 6 }}>{Math.round(c.weight * 100)}%</span>
                 </summary>

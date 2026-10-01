@@ -43,7 +43,7 @@ export default async function InterviewsPage() {
                 <div key={col.key}>
                   <div className={`col-head card ${col.cls}`} style={{ marginBottom: 12 }}>{col.title}<span className="chip">{items.length}</span></div>
                   {items.map((c) => (
-                    <a key={c.id} href={`#${c.id}`} className="card leader" style={{ padding: "10px 14px", marginBottom: 10, borderBottom: "2px solid var(--ink)" }}>
+                    <a key={c.id} href={`#${c.id}`} className="card leader" style={{ padding: "10px 14px", marginBottom: 10 }}>
                       <ScoreRing score={appliedScore(c)} size={40} />
                       <div style={{ flex: 1 }}>
                         <div className="nm">{c.full_name}</div>

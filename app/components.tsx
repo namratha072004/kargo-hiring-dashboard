@@ -460,7 +460,7 @@ export function InterviewEditor(props: {
           {props.iv.recording_is_blob ? (
             /\.(mp3|m4a|wav|ogg|aac)$/i.test(props.iv.recording_name ?? "")
               ? <audio controls src={`/api/recording/${props.id}`} style={{ width: "100%" }} />
-              : <video controls src={`/api/recording/${props.id}`} style={{ width: "100%", borderRadius: 10, border: "2px solid var(--ink)" }} />
+              : <video controls src={`/api/recording/${props.id}`} style={{ width: "100%", borderRadius: 12 }} />
           ) : (
             <a className="btn small secondary" href={props.iv.recording_url} target="_blank" rel="noreferrer">▶️ Open recording</a>
           )}
@@ -497,7 +497,7 @@ export function InterviewEditor(props: {
           <span className="sc-pick">
             {[1, 2, 3, 4].map((n) => (
               <button key={n} type="button" className={f.scorecard[k.id] === n ? "selected" : ""}
-                style={f.scorecard[k.id] === n ? { background: `hsl(${((n - 1) / 3) * 135} 78% 60%)` } : undefined}
+                style={f.scorecard[k.id] === n ? { background: `hsl(${((n - 1) / 3) * 135} 55% 78%)` } : undefined}
                 onClick={() => set({ scorecard: { ...f.scorecard, [k.id]: n } })}>{n}</button>
             ))}
           </span>
@@ -606,5 +606,30 @@ export function SettingsForm({ initial }: { initial: Record<string, string | num
       }}>💾 Save settings</button>
       {msg && <p className="small" style={{ marginTop: 10 }}><b>{msg}</b></p>}
     </section>
+  );
+}
+
+// Compact Invite / Pass buttons for lists (dashboard). Same rules as DecisionPanel.
+export function QuickDecide({ id, suggestion }: { id: string; suggestion: "invite" | "reject" | null }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+  async function decide(d: "invite" | "reject") {
+    setBusy(d); setErr("");
+    try { await post("/api/decision", { id, decision: d }); router.refresh(); }
+    catch (e) { setErr((e as Error).message); setBusy(null); }
+  }
+  return (
+    <span className="hstack" style={{ gap: 6 }}>
+      <button className={`tiny green ${suggestion === "invite" ? "selected" : ""}`} disabled={!!busy} onClick={() => decide("invite")}
+        title={suggestion === "invite" ? "Suggested by the rubric" : undefined}>
+        {busy === "invite" ? <span className="spin">⏳</span> : "✅"} Invite
+      </button>
+      <button className={`tiny red ${suggestion === "reject" ? "selected" : ""}`} disabled={!!busy} onClick={() => decide("reject")}
+        title={suggestion === "reject" ? "Suggested by the rubric" : undefined}>
+        {busy === "reject" ? <span className="spin">⏳</span> : "✋"} Pass
+      </button>
+      {err && <span className="err small">{err}</span>}
+    </span>
   );
 }

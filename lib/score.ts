@@ -5,8 +5,10 @@ export function scoreHue(score: number) {
   const t = Math.min(1, Math.max(0, (score - 1) / 3));
   return Math.round(t * 135);
 }
-export const scoreColor = (s: number) => `hsl(${scoreHue(s)} 78% 46%)`;
-export const scoreBg = (s: number) => `hsl(${scoreHue(s)} 85% 93%)`;
+// Pastel: soft fill for rings / bars, very light wash for chips, deep shade for text on that wash.
+export const scoreColor = (s: number) => `hsl(${scoreHue(s)} 52% 64%)`;
+export const scoreBg = (s: number) => `hsl(${scoreHue(s)} 70% 94%)`;
+export const scoreInk = (s: number) => `hsl(${scoreHue(s)} 45% 30%)`;
 
 export function scoreLabel(s: number) {
   if (s >= 3.5) return "Excellent";

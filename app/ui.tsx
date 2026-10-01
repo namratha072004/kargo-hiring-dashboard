@@ -1,7 +1,7 @@
 // Server-safe presentational pieces shared across pages.
 import Link from "next/link";
 import type { Candidate, Metric } from "@/lib/queries";
-import { LEVELS, scoreBg, scoreColor, scoreLabel } from "@/lib/score";
+import { LEVELS, scoreBg, scoreColor, scoreInk, scoreLabel } from "@/lib/score";
 
 export function ScoreRing({ score, size = 64, label }: { score: number | null; size?: number; label?: string }) {
   const s = score ?? 1;
@@ -9,7 +9,7 @@ export function ScoreRing({ score, size = 64, label }: { score: number | null; s
   return (
     <div className="ring" title={score == null ? "Not scored" : `${s.toFixed(2)} / 4 · ${scoreLabel(s)}`}
       style={{ "--s": Math.max(pct, 4), "--c": scoreColor(s), "--size": `${size}px` } as React.CSSProperties}>
-      <span>{score == null ? "–" : s.toFixed(1)}</span>
+      <span>{score == null ? "–" : s.toFixed(2)}</span>
       {label && <small>{label}</small>}
     </div>
   );
@@ -18,8 +18,8 @@ export function ScoreRing({ score, size = 64, label }: { score: number | null; s
 export function ScorePill({ score }: { score: number | null }) {
   if (score == null) return <span className="chip ghost">not scored</span>;
   return (
-    <span className="chip" style={{ background: scoreBg(score), color: "var(--ink)" }}>
-      <span style={{ width: 10, height: 10, borderRadius: 99, background: scoreColor(score), border: "2px solid var(--ink)" }} />
+    <span className="chip" style={{ background: scoreBg(score), color: scoreInk(score) }}>
+      <span style={{ width: 8, height: 8, borderRadius: 99, background: scoreColor(score) }} />
       {score.toFixed(2)} · {scoreLabel(score)}
     </span>
   );

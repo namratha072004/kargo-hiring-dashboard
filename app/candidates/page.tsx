@@ -120,7 +120,7 @@ function CandidateCard({ c, rank, role }: { c: Candidate; rank: number; role: Ro
         </div>
         <div className="cand-side">
           <Link href={`/candidates/${c.id}`} className="btn small secondary">Open →</Link>
-          <Link href={`/candidates/${c.id}#email`} className="btn small violet" style={{ background: "#a48bff" }}>✉️ Email</Link>
+          <Link href={`/candidates/${c.id}#email`} className="btn small violet">✉️ Email</Link>
         </div>
       </div>
       {c.brief && <p className="small ink2 clamp2" style={{ margin: "0 18px 14px" }} title={c.brief}>📝 {c.brief}</p>}
